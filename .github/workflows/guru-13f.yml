@@ -1,0 +1,81 @@
+name: 13F Gurus
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 23 10-16 2,5,8,11 *"
+
+concurrency:
+  group: guru-13f
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Decrypt private source
+        run: node scripts/crypto-bundle.mjs decrypt-source
+        env:
+          DASHBOARD_PASSWORD: ${{ secrets.DASHBOARD_PASSWORD }}
+
+      - name: Restore encrypted state
+        run: node scripts/crypto-bundle.mjs decrypt-state
+        env:
+          DASHBOARD_PASSWORD: ${{ secrets.DASHBOARD_PASSWORD }}
+
+      - name: Refresh 13F gurus
+        working-directory: work
+        run: npm run refresh:guru
+        env:
+          SEC_USER_AGENT: ${{ vars.SEC_USER_AGENT || 'GaldermaJay openmaheart GitHub Actions' }}
+
+      - name: Validate 13F gurus
+        working-directory: work
+        run: npm run validate:guru
+
+      - name: Re-encrypt state
+        run: node scripts/crypto-bundle.mjs encrypt-state
+        env:
+          DASHBOARD_PASSWORD: ${{ secrets.DASHBOARD_PASSWORD }}
+
+      - name: Build encrypted Pages artifact
+        working-directory: work
+        run: npm run build:secure
+        env:
+          DASHBOARD_PASSWORD: ${{ secrets.DASHBOARD_PASSWORD }}
+
+      - name: Commit encrypted state
+        run: |
+          if git diff --quiet -- state.enc; then
+            echo "No encrypted state changes to commit."
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add state.enc
+            git commit -m "chore: refresh encrypted 13f state"
+            git push
+          fi
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: work/dist
+
+      - id: deployment
+        uses: actions/deploy-pages@v4

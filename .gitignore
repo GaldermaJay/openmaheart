@@ -1,0 +1,4 @@
+work/
+dist/
+.env
+.DS_Store
