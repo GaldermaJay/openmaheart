@@ -1,6 +1,6 @@
 import { randomBytes, webcrypto } from "node:crypto";
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const rootDir = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -69,6 +69,43 @@ async function writeFileMap(targetDir, files) {
   }
 }
 
+function shouldBundleFile(relativePath) {
+  if (relativePath.startsWith(".git/")) return false;
+  if (relativePath.startsWith(".github/")) return false;
+  if (relativePath.startsWith("data/")) return false;
+  if (relativePath.startsWith("dist/")) return false;
+  if (relativePath.startsWith("node_modules/")) return false;
+  if (relativePath === ".DS_Store") return false;
+  if (relativePath === "CLOUD_DEPLOY.md") return false;
+  return true;
+}
+
+async function readFileMap(sourceDir, relativeRoot = "") {
+  const entries = await readdir(join(sourceDir, relativeRoot), { withFileTypes: true });
+  const files = {};
+
+  for (const entry of entries) {
+    const relativePath = relativeRoot ? `${relativeRoot}/${entry.name}` : entry.name;
+    if (!shouldBundleFile(relativePath)) continue;
+
+    if (entry.isDirectory()) {
+      Object.assign(files, await readFileMap(sourceDir, relativePath));
+    } else if (entry.isFile()) {
+      files[relativePath] = await readFile(join(sourceDir, relativePath), "utf8");
+    }
+  }
+
+  return files;
+}
+
+async function encryptSource() {
+  const sourceDir = process.argv[3] ? resolve(process.cwd(), process.argv[3]) : join(rootDir, "work");
+  const files = await readFileMap(sourceDir);
+  const encrypted = await encryptJson({ files });
+  await writeFile(join(rootDir, "source.enc"), `${JSON.stringify(encrypted)}\n`, "utf8");
+  console.log(`encrypted source files: ${Object.keys(files).length}`);
+}
+
 async function decryptSource() {
   const bundle = await decryptJson(join(rootDir, "source.enc"));
   await writeFileMap(join(rootDir, "work"), bundle.files || {});
@@ -92,10 +129,12 @@ async function encryptState() {
 
 if (mode === "decrypt-source") {
   await decryptSource();
+} else if (mode === "encrypt-source") {
+  await encryptSource();
 } else if (mode === "decrypt-state") {
   await decryptState();
 } else if (mode === "encrypt-state") {
   await encryptState();
 } else {
-  throw new Error("Usage: node scripts/crypto-bundle.mjs <decrypt-source|decrypt-state|encrypt-state>");
+  throw new Error("Usage: node scripts/crypto-bundle.mjs <decrypt-source|encrypt-source [source-dir]|decrypt-state|encrypt-state>");
 }
