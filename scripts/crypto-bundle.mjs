@@ -10,8 +10,8 @@ const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 const mode = process.argv[2];
 
-if (password.length < 12) {
-  throw new Error("DASHBOARD_PASSWORD must be set to a strong password with at least 12 characters.");
+if (password.length < 8) {
+  throw new Error("DASHBOARD_PASSWORD must be set to a password with at least 8 characters.");
 }
 
 function base64(buffer) {
