@@ -3,12 +3,13 @@ name: Market Pulse
 on:
   workflow_dispatch:
   schedule:
-    # KST 07:00, 08:00, 09:00, 16:00, 22:00, 23:30
+    # KST 07:00, 08:00, 09:00, 16:00, 22:00, Nasdaq open 22:30(DST)/23:30(standard)
     - cron: "0 22 * * *"
     - cron: "0 23 * * *"
     - cron: "0 0 * * *"
     - cron: "0 7 * * *"
     - cron: "0 13 * * *"
+    - cron: "30 13 * * 1-5"
     - cron: "30 14 * * *"
 
 concurrency:
@@ -48,6 +49,7 @@ jobs:
         working-directory: work
         run: npm run refresh:market
         env:
+          CRYPTO_REFRESH_MODE: nasdaq-open
           SEC_USER_AGENT: ${{ vars.SEC_USER_AGENT || 'GaldermaJay openmaheart GitHub Actions' }}
 
       - name: Validate market snapshot
