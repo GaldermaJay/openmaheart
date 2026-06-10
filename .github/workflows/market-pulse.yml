@@ -84,6 +84,8 @@ jobs:
           fi
 
       - name: Publish Pages branch
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           tmpdir="$(mktemp -d)"
           cp -R work/dist/. "$tmpdir/"
