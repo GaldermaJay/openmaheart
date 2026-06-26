@@ -3,12 +3,14 @@ name: Market Pulse
 on:
   workflow_dispatch:
   schedule:
-    # KST 07:00, 08:00, 09:00, 16:00, 22:00, Nasdaq open 22:30(DST)/23:30(standard)
+    # KST 07:00, 08:00, 09:00, 16:00, 22:00, 23:00 paper recommendation,
+    # Nasdaq open 22:30(DST)/23:30(standard)
     - cron: "0 22 * * *"
     - cron: "0 23 * * *"
     - cron: "0 0 * * *"
     - cron: "0 7 * * *"
     - cron: "0 13 * * *"
+    - cron: "0 14 * * *"
     - cron: "30 13 * * 1-5"
     - cron: "30 14 * * *"
 
@@ -32,41 +34,82 @@ jobs:
       url: https://galdermajay.github.io/openmaheart/
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout public deploy repo
+        uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
+      - name: Checkout private source
+        uses: actions/checkout@v4
+        with:
+          repository: GaldermaJay/openmaheart-source
+          ref: main
+          path: source
+          ssh-key: ${{ secrets.OPENMAHEART_SOURCE_DEPLOY_KEY }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
         with:
           node-version: "22"
 
-      - name: Decrypt private source
-        run: node scripts/crypto-bundle.mjs decrypt-source
-        env:
-          DASHBOARD_PASSWORD: ${{ secrets.DASHBOARD_PASSWORD }}
+      - name: Check scripts
+        working-directory: source
+        run: npm run check
 
-      - name: Restore encrypted state
-        run: node scripts/crypto-bundle.mjs decrypt-state
+      - name: Restore encrypted market state
+        run: |
+          node scripts/crypto-bundle.mjs decrypt-state
+          mkdir -p source/data
+          cp work/data/market-pulse.json source/data/market-pulse.json
         env:
           DASHBOARD_PASSWORD: ${{ secrets.DASHBOARD_PASSWORD }}
 
       - name: Refresh market snapshot
-        working-directory: work
+        if: github.event_name != 'workflow_dispatch'
+        timeout-minutes: 6
+        continue-on-error: true
+        working-directory: source
         run: npm run refresh:market
         env:
           CRYPTO_REFRESH_MODE: nasdaq-open
-          FORCE_CRYPTO_REFRESH: ${{ github.event_name == 'workflow_dispatch' || github.event.schedule == '30 13 * * 1-5' || github.event.schedule == '30 14 * * *' }}
-          SEC_USER_AGENT: ${{ vars.SEC_USER_AGENT || 'GaldermaJay openmaheart GitHub Actions' }}
+          FORCE_CRYPTO_REFRESH: "${{ github.event.schedule == '30 13 * * 1-5' || github.event.schedule == '30 14 * * *' }}"
+          SEC_USER_AGENT: "${{ vars.SEC_USER_AGENT || 'GaldermaJay openmaheart GitHub Actions' }}"
 
       - name: Validate market snapshot
-        working-directory: work
+        working-directory: source
         run: npm run validate:market
 
-      - name: Re-encrypt state
-        run: node scripts/crypto-bundle.mjs encrypt-state
+      - name: Generate paper recommendation
+        if: github.event_name == 'workflow_dispatch' || github.event.schedule == '0 14 * * *'
+        working-directory: source
+        run: npm run paper:daily -- --force
+        env:
+          TRADINGAGENTS_ENABLED: "0"
+
+      - name: Commit refreshed source data
+        working-directory: source
+        run: |
+          if [ -z "$(git status --porcelain -- data/market-pulse.json data/paper-trading/latest.json)" ]; then
+            echo "No source data changes to commit."
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add data/market-pulse.json
+            if [ -f data/paper-trading/latest.json ]; then
+              git add data/paper-trading/latest.json
+            fi
+            git commit -m "chore: refresh market pulse and paper recommendation"
+            git push origin HEAD:main
+          fi
+
+      - name: Re-encrypt market state
+        run: |
+          mkdir -p work/data
+          cp source/data/market-pulse.json work/data/market-pulse.json
+          node scripts/crypto-bundle.mjs encrypt-state
         env:
           DASHBOARD_PASSWORD: ${{ secrets.DASHBOARD_PASSWORD }}
 
       - name: Build encrypted Pages artifact
-        working-directory: work
+        working-directory: source
         run: npm run build:secure
         env:
           DASHBOARD_PASSWORD: ${{ secrets.DASHBOARD_PASSWORD }}
@@ -88,7 +131,7 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
           tmpdir="$(mktemp -d)"
-          cp -R work/dist/. "$tmpdir/"
+          cp -R source/dist/. "$tmpdir/"
           git -C "$tmpdir" init -b gh-pages
           git -C "$tmpdir" config user.name "github-actions[bot]"
           git -C "$tmpdir" config user.email "41898282+github-actions[bot]@users.noreply.github.com"
