@@ -3,14 +3,13 @@ name: Market Pulse
 on:
   workflow_dispatch:
   schedule:
-    # KST 07:00, 08:00, 09:00, 16:00, 22:00, 23:00 paper recommendation,
+    # KST 07:00, 08:00, 09:00, 16:00, 22:00,
     # Nasdaq open 22:30(DST)/23:30(standard)
     - cron: "0 22 * * *"
     - cron: "0 23 * * *"
     - cron: "0 0 * * *"
     - cron: "0 7 * * *"
     - cron: "0 13 * * *"
-    - cron: "0 14 * * *"
     - cron: "30 13 * * 1-5"
     - cron: "30 14 * * *"
 
@@ -76,13 +75,6 @@ jobs:
       - name: Validate market snapshot
         working-directory: source
         run: npm run validate:market
-
-      - name: Generate paper recommendation
-        if: github.event_name == 'workflow_dispatch' || github.event.schedule == '0 14 * * *'
-        working-directory: source
-        run: npm run paper:daily -- --force
-        env:
-          TRADINGAGENTS_ENABLED: "0"
 
       - name: Commit refreshed source data
         working-directory: source
