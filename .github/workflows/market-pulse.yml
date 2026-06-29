@@ -53,14 +53,6 @@ jobs:
         working-directory: source
         run: npm run check
 
-      - name: Restore encrypted market state
-        run: |
-          node scripts/crypto-bundle.mjs decrypt-state
-          mkdir -p source/data
-          cp work/data/market-pulse.json source/data/market-pulse.json
-        env:
-          DASHBOARD_PASSWORD: ${{ secrets.DASHBOARD_PASSWORD }}
-
       - name: Refresh market snapshot
         if: github.event_name != 'workflow_dispatch'
         timeout-minutes: 6
