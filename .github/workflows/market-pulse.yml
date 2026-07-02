@@ -110,11 +110,16 @@ jobs:
             git push
           fi
 
-      - uses: actions/configure-pages@v5
-
-      - uses: actions/upload-pages-artifact@v3
-        with:
-          path: source/dist
-
-      - id: deployment
-        uses: actions/deploy-pages@v4
+      - name: Publish Pages branch
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          tmpdir="$(mktemp -d)"
+          cp -R source/dist/. "$tmpdir/"
+          git -C "$tmpdir" init -b gh-pages
+          git -C "$tmpdir" config user.name "github-actions[bot]"
+          git -C "$tmpdir" config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git -C "$tmpdir" add .
+          git -C "$tmpdir" commit -m "deploy: publish secure dashboard"
+          git -C "$tmpdir" remote add origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git -C "$tmpdir" push --force origin gh-pages
