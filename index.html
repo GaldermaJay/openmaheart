@@ -1,0 +1,249 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>openmaheart</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --ink: #171918;
+        --muted: #5f6a64;
+        --green: #287c63;
+        --line: #d5ddd7;
+        --panel: #fbfcfa;
+        --red: #b84a43;
+      }
+
+      * { box-sizing: border-box; }
+
+      body {
+        min-height: 100vh;
+        margin: 0;
+        display: grid;
+        place-items: center;
+        background: #eef3ef;
+        color: var(--ink);
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+
+      main {
+        width: min(440px, calc(100vw - 32px));
+        padding: 28px;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        background: var(--panel);
+        box-shadow: 0 18px 48px rgba(23, 25, 24, 0.1);
+      }
+
+      p {
+        margin: 0;
+        color: var(--muted);
+        font-size: 14px;
+        font-weight: 750;
+        line-height: 1.45;
+      }
+
+      h1 {
+        margin: 8px 0 18px;
+        font-size: 30px;
+        line-height: 1.05;
+        letter-spacing: 0;
+      }
+
+      label {
+        display: block;
+        margin-bottom: 8px;
+        color: var(--muted);
+        font-size: 13px;
+        font-weight: 900;
+      }
+
+      input {
+        width: 100%;
+        min-height: 48px;
+        padding: 0 13px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: white;
+        color: var(--ink);
+        font: inherit;
+        font-size: 18px;
+        font-weight: 800;
+      }
+
+      button {
+        width: 100%;
+        min-height: 48px;
+        margin-top: 12px;
+        border: 0;
+        border-radius: 8px;
+        background: var(--green);
+        color: white;
+        cursor: pointer;
+        font: inherit;
+        font-weight: 900;
+      }
+
+      button:disabled,
+      input:disabled {
+        cursor: not-allowed;
+        opacity: 0.62;
+      }
+
+      small {
+        display: block;
+        min-height: 18px;
+        margin-top: 12px;
+        color: var(--red);
+        font-size: 13px;
+        font-weight: 800;
+      }
+
+      .security-note {
+        margin-top: 12px;
+        font-size: 12px;
+        font-weight: 800;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <p>Secure Dashboard</p>
+      <h1>openmaheart</h1>
+      <form id="loginForm">
+        <label for="password">비밀번호</label>
+        <input id="password" type="password" autocomplete="current-password" autofocus required />
+        <button id="unlockButton" type="submit">열기</button>
+        <small id="message"></small>
+      </form>
+      <p class="security-note">10회 실패하면 이 브라우저에서 30일간 잠깁니다.</p>
+    </main>
+    <script>
+      const decoder = new TextDecoder();
+      const encoder = new TextEncoder();
+      const message = document.querySelector("#message");
+      const button = document.querySelector("#unlockButton");
+      const passwordInput = document.querySelector("#password");
+      const lockKey = "openmaheart:auth-lock:v2";
+      const maxAttempts = 10;
+      const lockMs = 30 * 24 * 60 * 60 * 1000;
+
+      function readLockState() {
+        try {
+          return JSON.parse(localStorage.getItem(lockKey)) || { failures: 0, lockedUntil: 0 };
+        } catch (error) {
+          return { failures: 0, lockedUntil: 0 };
+        }
+      }
+
+      function writeLockState(state) {
+        localStorage.setItem(lockKey, JSON.stringify(state));
+      }
+
+      function clearLockState() {
+        localStorage.removeItem(lockKey);
+      }
+
+      function formatUntil(timestamp) {
+        return new Intl.DateTimeFormat("ko-KR", {
+          dateStyle: "medium",
+          timeStyle: "short",
+        }).format(new Date(timestamp));
+      }
+
+      function getActiveLock() {
+        const state = readLockState();
+        const failures = state.failures || 0;
+        if (state.lockedUntil && Date.now() < state.lockedUntil && failures >= maxAttempts) return state;
+        if (state.lockedUntil && Date.now() < state.lockedUntil) {
+          const next = { failures, lockedUntil: 0 };
+          writeLockState(next);
+          return next;
+        }
+        if (state.lockedUntil) {
+          clearLockState();
+          return { failures: 0, lockedUntil: 0 };
+        }
+        return { failures, lockedUntil: 0 };
+      }
+
+      function applyLockUi() {
+        const state = getActiveLock();
+        if (!state.lockedUntil) return false;
+        passwordInput.disabled = true;
+        button.disabled = true;
+        button.textContent = "잠김";
+        message.textContent = "비밀번호 실패 10회 초과로 잠겼습니다. 해제 예정: " + formatUntil(state.lockedUntil);
+        return true;
+      }
+
+      function recordFailure() {
+        const state = readLockState();
+        const failures = (state.failures || 0) + 1;
+        const next = {
+          failures,
+          lockedUntil: failures >= maxAttempts ? Date.now() + lockMs : 0,
+        };
+        writeLockState(next);
+        return next;
+      }
+
+      function bytesFromBase64(value) {
+        const binary = atob(value);
+        const bytes = new Uint8Array(binary.length);
+        for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+        return bytes;
+      }
+
+      async function deriveKey(password, salt, iterations) {
+        const keyMaterial = await crypto.subtle.importKey("raw", encoder.encode(password), "PBKDF2", false, ["deriveKey"]);
+        return crypto.subtle.deriveKey(
+          { name: "PBKDF2", hash: "SHA-256", salt, iterations },
+          keyMaterial,
+          { name: "AES-GCM", length: 256 },
+          false,
+          ["decrypt"],
+        );
+      }
+
+      applyLockUi();
+
+      document.querySelector("#loginForm").addEventListener("submit", async (event) => {
+        event.preventDefault();
+        if (applyLockUi()) return;
+
+        message.textContent = "";
+        button.disabled = true;
+        button.textContent = "여는 중";
+
+        try {
+          const password = passwordInput.value;
+          const payload = await fetch("./payload.enc", { cache: "no-store" }).then((response) => response.json());
+          const key = await deriveKey(password, bytesFromBase64(payload.salt), payload.iterations);
+          const plaintext = await crypto.subtle.decrypt(
+            { name: "AES-GCM", iv: bytesFromBase64(payload.iv) },
+            key,
+            bytesFromBase64(payload.ciphertext),
+          );
+          clearLockState();
+          document.open();
+          document.write(decoder.decode(plaintext));
+          document.close();
+        } catch (error) {
+          const state = recordFailure();
+          if (state.lockedUntil) {
+            applyLockUi();
+            return;
+          }
+
+          const remaining = Math.max(0, maxAttempts - state.failures);
+          message.textContent = "비밀번호가 맞지 않거나 payload를 열 수 없습니다. 남은 시도: " + remaining + "회";
+          button.disabled = false;
+          button.textContent = "열기";
+        }
+      });
+    </script>
+  </body>
+</html>
